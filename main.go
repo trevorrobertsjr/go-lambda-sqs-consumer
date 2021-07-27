@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"time"
 
@@ -16,9 +15,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
+// MarshalMap requires public struct fields
+// if your key/attributes shhould be lowercase, add directives
 type Record struct {
-	timestamp string
-	data      string
+	Timestamp string `json:"timestamp"`
+	Data      string `json:"data"`
 }
 
 func handleRequest(ctx context.Context, event events.SQSEvent) (string, error) {
@@ -28,7 +29,7 @@ func handleRequest(ctx context.Context, event events.SQSEvent) (string, error) {
 		Region: aws.String("us-east-1"),
 	})
 	if err != nil {
-		log.Println("Failed to get event data", err)
+		log.Fatalf("Failed to start a session, %s", err)
 		return "error", err
 	}
 
@@ -39,19 +40,22 @@ func handleRequest(ctx context.Context, event events.SQSEvent) (string, error) {
 	dynamodbClient := dynamodb.New(sess)
 	for _, record := range event.Records {
 		r := Record{
-			timestamp: time.Now().Format("20060102150405"),
-			data:      record.Body,
+			Timestamp: time.Now().Format("20060102150405"),
+			Data:      record.Body,
 		}
-		av, err := dynamodbattribute.MarshalMap(r)
+		log.Printf("Writing %s to DynamoDB table", record.Body)
+		itemInput, err := dynamodbattribute.MarshalMap(r)
 		if err != nil {
-			panic(fmt.Sprintf("failed to DynamoDB marshal Record, %v", err))
+			log.Fatalf("Failed to convert input data to a DynamoDB item format, %s", err)
 		}
 
-		dynamodbClient.PutItem(&dynamodb.PutItemInput{
-
+		_, err = dynamodbClient.PutItem(&dynamodb.PutItemInput{
 			TableName: aws.String("test"),
-			Item:      av,
+			Item:      itemInput,
 		})
+		if err != nil {
+			log.Fatalf("Failed to PutItem: %s", err)
+		}
 	}
 	return string(eventJson), nil
 }
